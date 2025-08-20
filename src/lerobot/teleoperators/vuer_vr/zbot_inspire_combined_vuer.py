@@ -67,7 +67,7 @@ async def stream_cameras(session: VuerSession, left_src=0, right_src=1):
                 frame_left_rgb,
                 aspect=1.778,
                 height=1,
-                distanceToCamera=cam_mat[0][0] / frame_left_rgb.shape[0],
+                distanceToCamera=1,
                 layers=1,
                 format="jpeg",
                 quality=50,
@@ -78,7 +78,7 @@ async def stream_cameras(session: VuerSession, left_src=0, right_src=1):
                 frame_right_rgb,
                 aspect=1.778,
                 height=1,
-                distanceToCamera= cam_mat[0][0] / frame_right_rgb.shape[0],
+                distanceToCamera=1,
                 layers=2,
                 format="jpeg",
                 quality=50,
@@ -106,10 +106,6 @@ class VuerVR(Teleoperator):
         self.cam_mat = np.array([[266.61728276,0.,643.83126137],[0.,266.94450686,494.81811813],[0.,0.,1.,]])
         self.dist_coeffs = np.array([[-6.07417419e-02,9.95447444e-02,-2.26448001e-04,1.22881804e-03,3.42134205e-03,1.45361886e-01,8.03248099e-02,2.11170107e-02,-3.80620047e-03,2.48350591e-05,-8.33565666e-04,2.97806723e-05]])
 
-        left_pipeline = "libcamerasrc camera-name=/base/axi/pcie@1000120000/rp1/i2c@80000/ov5647@36 exposure-time-mode=0 analogue-gain-mode=0 ae-enable=true awb-enable=true af-mode=manual ! video/x-raw,format=BGR,width=1280,height=720,framerate=30/1 ! videoconvert ! appsink drop=1 max-buffers=1"
-        self.cam_left = cv2.VideoCapture(left_pipeline, cv2.CAP_GSTREAMER)
-
-        
         # Initialize data storage
         self.joint_positions = {}
         self.finger_positions = {}
@@ -151,8 +147,18 @@ class VuerVR(Teleoperator):
         self.left_landmarks_shared = np.zeros(75, dtype=np.float32)  # 25 landmarks * 3 coordinates
         self.right_landmarks_shared = np.zeros(75, dtype=np.float32)
         self.aspect_shared = type('obj', (object,), {'value': 1.0})()
-        self.app = None
         self.vuer_session = None
+
+        self.app = Vuer()
+        
+        @self.app.spawn(start=True)
+        async def main(session: VuerSession):
+            self.vuer_session = session
+            self.connected = True
+            await stream_cameras(session)
+            
+        self.app.add_handler("HAND_MOVE")(self.on_hand_move)
+        self.app.add_handler("CAMERA_MOVE")(self.on_cam_move)
 
 
     def _convert_udp_to_hand_value(self, raw_value: float) -> float:
@@ -184,17 +190,8 @@ class VuerVR(Teleoperator):
         return self.connected
     def connect(self, calibrate: bool = True) -> None:
         """Connect to VR system."""
-        self.app = Vuer()
-        
-        @self.app.spawn(start=True)
-        async def main(session: VuerSession):
-            self.vuer_session = session
-            self.connected = True
-            await stream_cameras(session)
-            
-        self.app.add_handler("HAND_MOVE")(self.on_hand_move)
-        self.app.add_handler("CAMERA_MOVE")(self.on_cam_move)
         # Note: app.run() should be called from the main event loop, not here
+        self.connected = True
     
     def on_hand_move(self, event, session, fps=60):
         self.left_hand_shared[:] = event.value["leftHand"]
@@ -259,7 +256,6 @@ class VuerVR(Teleoperator):
                 
             
         joints = self.arm_ik.solve_ik(rel_left_wrist_mat, rel_right_wrist_mat)
-        print(f"Arm joints: {joints}")
         # Process joint data
         for joint_id_str, position in joints.items():
             joint_id = int(joint_id_str)
@@ -269,8 +265,6 @@ class VuerVR(Teleoperator):
                 self.joint_positions[joint_key] = float(position)
         
         finger_values = right_qpos
-
-        print(f"Finger joints: {finger_values}")
         # Process finger data
         if len(finger_values) >= 6:
             self._raw_finger_values = finger_values[:6]
