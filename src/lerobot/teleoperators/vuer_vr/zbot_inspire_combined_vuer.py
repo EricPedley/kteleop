@@ -133,26 +133,33 @@ class VuerVR(Teleoperator):
         for finger_name in config.finger_names:
             self.finger_positions[f"{finger_name}.pos"] = 0.0
             
-        RetargetingConfig.set_default_urdf_dir('../assets')
-        with Path('inspire_hand.yml').open('r') as f:
+        assets_path = Path('/home/dpsh/kteleop/src/lerobot/teleoperators/vuer_vr/assets')
+        RetargetingConfig.set_default_urdf_dir(str(assets_path))
+        with (assets_path / 'inspire_hand/inspire_hand.yml').open('r') as f:
             cfg = yaml.safe_load(f)
         left_retargeting_config = RetargetingConfig.from_dict(cfg['left'])
         right_retargeting_config = RetargetingConfig.from_dict(cfg['right'])
         self.left_retargeting = left_retargeting_config.build()
         self.right_retargeting = right_retargeting_config.build()
         self.arm_ik = KBot_ArmIK()
+        
+        # Initialize VR data storage
+        self.connected = False
+        self.left_hand_shared = np.eye(4, dtype=np.float32)
+        self.right_hand_shared = np.eye(4, dtype=np.float32)
+        self.head_matrix_shared = np.eye(4, dtype=np.float32)
+        self.left_landmarks_shared = np.zeros(75, dtype=np.float32)  # 25 landmarks * 3 coordinates
+        self.right_landmarks_shared = np.zeros(75, dtype=np.float32)
+        self.aspect_shared = type('obj', (object,), {'value': 1.0})()
+        self.app = None
+        self.vuer_session = None
 
 
-    def _convert_udp_to_hand_value(self, raw_value: int) -> float:
-        """Fast lookup-based finger conversion (replaces expensive math.exp calls)."""
-        # Clamp raw value to valid range
-        if raw_value < self.config.raw_min:
-            raw_value = self.config.raw_min
-        elif raw_value > self.config.raw_max:
-            raw_value = self.config.raw_max
-            
-        # Fast lookup instead of expensive exponential calculation
-        return self.finger_lookup.get(raw_value, 0.0)
+    def _convert_udp_to_hand_value(self, raw_value: float) -> float:
+        """Convert raw finger value to hand value."""
+        # For now, just return the raw value as it's already processed by retargeting
+        # You can add your own conversion logic here if needed
+        return float(raw_value)
 
     @property
     def action_features(self) -> dict[str, type]:
@@ -176,14 +183,18 @@ class VuerVR(Teleoperator):
     def is_connected(self) -> bool:
         return self.connected
     def connect(self, calibrate: bool = True) -> None:
-
+        """Connect to VR system."""
         self.app = Vuer()
+        
         @self.app.spawn(start=True)
         async def main(session: VuerSession):
+            self.vuer_session = session
+            self.connected = True
             await stream_cameras(session)
-        self.app.run()
+            
         self.app.add_handler("HAND_MOVE")(self.on_hand_move)
         self.app.add_handler("CAMERA_MOVE")(self.on_cam_move)
+        # Note: app.run() should be called from the main event loop, not here
     
     def on_hand_move(self, event, session, fps=60):
         self.left_hand_shared[:] = event.value["leftHand"]
@@ -221,8 +232,8 @@ class VuerVR(Teleoperator):
         right_wrist_mat = grd_yup2grd_zup @ self.right_hand_shared @ fast_mat_inv(grd_yup2grd_zup)
         left_wrist_mat = grd_yup2grd_zup @ self.left_hand_shared @ fast_mat_inv(grd_yup2grd_zup)
 
-        left_fingers = np.concatenate([self.left_landmarks.copy().T, np.ones((1, self.left_landmarks.shape[0]))])
-        right_fingers = np.concatenate([self.right_landmarks.copy().T, np.ones((1, self.right_landmarks.shape[0]))])
+        left_fingers = np.concatenate([self.left_landmarks_shared.reshape(-1, 3).T, np.ones((1, 25))])
+        right_fingers = np.concatenate([self.right_landmarks_shared.reshape(-1, 3).T, np.ones((1, 25))])
 
         # change of basis
         left_fingers = grd_yup2grd_zup @ left_fingers
@@ -313,7 +324,9 @@ class VuerVR(Teleoperator):
         ], to="bgChildren")
 
     def disconnect(self) -> None:
+        """Disconnect from VR system."""
         if self.is_connected:
-            self.sock.close()
             self.connected = False
-            logger.info("Disconnected from combined UDP teleoperator") 
+            if self.cam_left is not None:
+                self.cam_left.release()
+            logger.info("Disconnected from VR teleoperator") 
