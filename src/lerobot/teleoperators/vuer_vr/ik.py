@@ -65,7 +65,7 @@ class KBot_ArmIK:
         self.robot = pin.RobotWrapper.BuildFromURDF(str(assets_path / 'kbot/robot.urdf'), str(assets_path / 'kbot'))
 
         self.mixed_jointsToLockIDs = [ # joints that shouldn't move
-            "base_joint",
+            # "base_joint",
             "frame_imu_site",
             "dof_right_hip_pitch_04",
             "dof_right_hip_roll_03",
@@ -85,12 +85,12 @@ class KBot_ArmIK:
         )
 
         self.reduced_robot.model.addFrame(
-            pin.Frame('L_ee', self.reduced_robot.model.getJointId('KB_C_501X_Left_Bayonet_Adapter_Hard_Stop'),
+            pin.Frame('L_ee', self.reduced_robot.model.getJointId('dof_left_wrist_00'),
                       pin.SE3(np.eye(3),
                               np.array([0.05, 0, 0]).T), pin.FrameType.OP_FRAME))
 
         self.reduced_robot.model.addFrame(
-            pin.Frame('R_ee', self.reduced_robot.model.getJointId('KB_C_501X_Right_Bayonet_Adapter_Hard_Stop'),
+            pin.Frame('R_ee', self.reduced_robot.model.getJointId('dof_right_wrist_00'),
                       pin.SE3(np.eye(3),
                               np.array([0.05, 0, 0]).T), pin.FrameType.OP_FRAME))
 
