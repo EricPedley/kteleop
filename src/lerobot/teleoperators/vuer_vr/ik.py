@@ -59,7 +59,7 @@ class KBot_ArmIK:
         self.Unit_Test = Unit_Test
         self.Visualization = Visualization
 
-        self.robot = pin.RobotWrapper.BuildFromURDF('assets/kbot/robot_with_hand.urdf', 'assets/kbot')
+        self.robot = pin.RobotWrapper.BuildFromURDF('assets/kbot/robot.urdf', 'assets/kbot')
 
         self.mixed_jointsToLockIDs = [ # joints that shouldn't move
             "base_joint",
@@ -82,7 +82,7 @@ class KBot_ArmIK:
         )
 
         self.reduced_robot.model.addFrame(
-            pin.Frame('L_ee', self.reduced_robot.model.getJointId('left_wrist_yaw_joint'),
+            pin.Frame('L_ee', self.reduced_robot.model.getJointId('KB_C_501X_Left_Bayonet_Adapter_Hard_Stop'),
                       pin.SE3(np.eye(3),
                               np.array([0.05, 0, 0]).T), pin.FrameType.OP_FRAME))
 

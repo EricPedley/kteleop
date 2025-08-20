@@ -18,6 +18,25 @@ from vuer.schemas import ImageBackground
 from ..teleoperator import Teleoperator
 from .config_zbot_inspire_combined_vuer import ZBotInspireCombinedConfig
 from dex_retargeting.retargeting_config import RetargetingConfig
+from .ik import KBot_ArmIK
+
+def fast_mat_inv(mat):
+    ret = np.eye(4)
+    ret[:3, :3] = mat[:3, :3].T
+    ret[:3, 3] = -mat[:3, :3].T @ mat[:3, 3]
+    return ret
+
+hand2inspire = np.array([[0, -1, 0, 0],
+                         [0, 0, -1, 0],
+                         [1, 0, 0, 0],
+                         [0, 0, 0, 1]])
+
+
+grd_yup2grd_zup = np.array([[0, 0, -1, 0],
+                            [-1, 0, 0, 0],
+                            [0, 1, 0, 0],
+                            [0, 0, 0, 1]])
+
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +140,7 @@ class ZBotInspireCombined(Teleoperator):
         right_retargeting_config = RetargetingConfig.from_dict(cfg['right'])
         self.left_retargeting = left_retargeting_config.build()
         self.right_retargeting = right_retargeting_config.build()
+        self.arm_ik = KBot_ArmIK()
 
 
     def _convert_udp_to_hand_value(self, raw_value: int) -> float:
@@ -210,19 +230,25 @@ class ZBotInspireCombined(Teleoperator):
 
         rel_left_fingers = fast_mat_inv(left_wrist_mat) @ left_fingers
         rel_right_fingers = fast_mat_inv(right_wrist_mat) @ right_fingers
-        left_qpos = self.left_retargeting.retarget(left_hand_mat[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
-        right_qpos = self.right_retargeting.retarget(right_hand_mat[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+        left_qpos = self.left_retargeting.retarget(rel_left_fingers[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+        right_qpos = self.right_retargeting.retarget(rel_right_fingers[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
 
-        if latest_data is None:
-            # No new data, return last known positions
-            action = {}
-            action.update({f"zbot_{k}": v for k, v in self.joint_positions.items()})
-            action.update({f"hand_{k}": v for k, v in self.finger_positions.items()})
-            return action
+        # if latest_data is None:
+        #     # No new data, return last known positions
+        #     action = {}
+        #     action.update({f"zbot_{k}": v for k, v in self.joint_positions.items()})
+        #     action.update({f"hand_{k}": v for k, v in self.finger_positions.items()})
+        #     return action
+
+        rel_left_wrist_mat = left_wrist_mat @ hand2inspire
+        rel_left_wrist_mat[0:3, 3] = rel_left_wrist_mat[0:3, 3] - head_mat[0:3, 3]
+
+        rel_right_wrist_mat = right_wrist_mat @ hand2inspire  # wTr = wTh @ hTr
+        rel_right_wrist_mat[0:3, 3] = rel_right_wrist_mat[0:3, 3] - head_mat[0:3, 3]
                 
             
+        joints = self.arm_ik.solve_ik(rel_left_wrist_mat, rel_right_wrist_mat)
         # Process joint data
-        joints = combined_data.get("joints", {})
         for joint_id_str, position in joints.items():
             joint_id = int(joint_id_str)
             if joint_id in self.joint_id_to_name:
@@ -230,8 +256,8 @@ class ZBotInspireCombined(Teleoperator):
                 joint_key = f"{joint_name}.pos"
                 self.joint_positions[joint_key] = float(position)
         
+        finger_values = right_qpos
         # Process finger data
-        finger_values = combined_data.get("fingers", [])
         if len(finger_values) >= 6:
             self._raw_finger_values = finger_values[:6]
             
