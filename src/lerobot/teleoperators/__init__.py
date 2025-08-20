@@ -23,3 +23,4 @@ from .zbot_leader import ZbotLeader, ZbotLeaderConfig
 from .oymotion_glove import OyMotionGlove, OyMotionGloveConfig
 from .zbot_inspire_leader import ZBotInspireLeader, ZBotInspireLeaderConfig
 from .zbot_inspire_combined import ZBotInspireCombined, ZBotInspireCombinedConfig
+from .vuer_vr import VuerVR, VuerVRConfig

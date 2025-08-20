@@ -16,7 +16,7 @@ from vuer import Vuer, VuerSession
 import asyncio
 from vuer.schemas import ImageBackground
 from ..teleoperator import Teleoperator
-from .config_zbot_inspire_combined_vuer import ZBotInspireCombinedConfig
+from .config_zbot_inspire_combined_vuer import VuerVRConfig
 from dex_retargeting.retargeting_config import RetargetingConfig
 from .ik import KBot_ArmIK
 
@@ -95,10 +95,10 @@ class VuerVR(Teleoperator):
     over a single UDP port in one packet.
     """
 
-    config_class = ZBotInspireCombinedConfig
-    name = "zbot_inspire_combined"
+    config_class = VuerVRConfig
+    name = "vuer_vr"
 
-    def __init__(self, config: ZBotInspireCombinedConfig):
+    def __init__(self, config: VuerVRConfig):
         super().__init__(config)
         self.config = config
         
