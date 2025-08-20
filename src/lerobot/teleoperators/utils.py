@@ -82,9 +82,9 @@ def make_teleoperator_from_config(config: TeleoperatorConfig) -> Teleoperator:
 
         return ZBotInspireCombined(config)
     elif config.type == "vuer_vr":
-        from .vuer_vr import VuerVRConfig
+        from .vuer_vr import VuerVR
 
-        return VuerVRConfig(config)
+        return VuerVR(config)
 
     else:
         raise ValueError(config.type)
