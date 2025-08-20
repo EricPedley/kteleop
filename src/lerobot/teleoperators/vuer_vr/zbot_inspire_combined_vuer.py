@@ -259,6 +259,7 @@ class VuerVR(Teleoperator):
                 
             
         joints = self.arm_ik.solve_ik(rel_left_wrist_mat, rel_right_wrist_mat)
+        print(f"Arm joints: {joints}")
         # Process joint data
         for joint_id_str, position in joints.items():
             joint_id = int(joint_id_str)
@@ -268,6 +269,8 @@ class VuerVR(Teleoperator):
                 self.joint_positions[joint_key] = float(position)
         
         finger_values = right_qpos
+
+        print(f"Finger joints: {finger_values}")
         # Process finger data
         if len(finger_values) >= 6:
             self._raw_finger_values = finger_values[:6]
