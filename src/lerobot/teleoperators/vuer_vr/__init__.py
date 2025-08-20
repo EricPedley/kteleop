@@ -1,4 +1,4 @@
-from .config_zbot_inspire_combined_vuer import ZBotInspireCombinedConfig
-from .zbot_inspire_combined_vuer import ZBotInspireCombined
+from .config_zbot_inspire_combined_vuer import VuerVRConfig
+from .zbot_inspire_combined_vuer import VuerVR
 
-__all__ = ["ZBotInspireCombined", "ZBotInspireCombinedConfig"] 
+__all__ = ["VuerVR", "VuerVRConfig"] 

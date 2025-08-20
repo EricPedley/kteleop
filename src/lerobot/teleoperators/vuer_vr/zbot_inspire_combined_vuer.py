@@ -89,7 +89,7 @@ async def stream_cameras(session: VuerSession, left_src=0, right_src=1):
         await asyncio.sleep(1/30)  # ~30 FPS for smoother streaming
 
 
-class ZBotInspireCombined(Teleoperator):
+class VuerVR(Teleoperator):
     """
     Combined ZBot + Inspire hand teleoperator that receives both joint and finger data
     over a single UDP port in one packet.

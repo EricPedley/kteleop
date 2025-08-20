@@ -6,7 +6,7 @@ from lerobot.teleoperators.teleoperator import TeleoperatorConfig
 
 
 @dataclass
-class ZBotInspireCombinedConfig(TeleoperatorConfig):
+class VuerVRConfig(TeleoperatorConfig):
     """
     Configuration for combined ZBot + Inspire hand teleoperator over single UDP port.
     Receives both joint and finger data in one packet.
@@ -40,4 +40,4 @@ class ZBotInspireCombinedConfig(TeleoperatorConfig):
             ]
 
 
-TeleoperatorConfig.register_subclass("vuer_vr", ZBotInspireCombinedConfig) 
+TeleoperatorConfig.register_subclass("vuer_vr", VuerVRConfig) 
