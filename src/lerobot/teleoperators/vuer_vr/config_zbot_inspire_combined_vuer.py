@@ -11,9 +11,6 @@ class ZBotInspireCombinedConfig(TeleoperatorConfig):
     Configuration for combined ZBot + Inspire hand teleoperator over single UDP port.
     Receives both joint and finger data in one packet.
     """
-    host: str = "0.0.0.0"
-    port: int = 8888
-    timeout_ms: int = 100
     
     # Joint configuration (inherited from ZBot)
     left_arm_ids: list[int] = None
@@ -43,4 +40,4 @@ class ZBotInspireCombinedConfig(TeleoperatorConfig):
             ]
 
 
-TeleoperatorConfig.register_subclass("zbot_inspire_combined", ZBotInspireCombinedConfig) 
+TeleoperatorConfig.register_subclass("vuer_vr", ZBotInspireCombinedConfig) 
