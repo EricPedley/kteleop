@@ -14,7 +14,7 @@ from pathlib import Path
 
 from vuer import Vuer, VuerSession
 import asyncio
-from vuer.schemas import ImageBackground
+from vuer.schemas import ImageBackground, Hands
 from ..teleoperator import Teleoperator
 from .config_zbot_inspire_combined_vuer import VuerVRConfig
 from dex_retargeting.retargeting_config import RetargetingConfig
@@ -55,9 +55,10 @@ async def stream_cameras(session: VuerSession, left_src=0, right_src=1):
         if not ret_left or not ret_right:
             continue
         frame_left_rgb = cv2.cvtColor(frame_left, cv2.COLOR_BGR2RGB)
-        frame_right_rgb = cv2.cvtColor(frame_right, cv2.COLOR_BGR2RGB)
+        # frame_right_rgb = cv2.cvtColor(frame_right, cv2.COLOR_BGR2RGB)
         frame_left_rgb = cv2.undistort(frame_left_rgb, cam_mat, dist_coeffs)
-        frame_right_rgb = cv2.undistort(frame_right_rgb, cam_mat, dist_coeffs)
+        frame_right_rgb = frame_left_rgb.copy()
+        # frame_right_rgb = cv2.undistort(frame_right_rgb, cam_mat, dist_coeffs)
         # Add text labels for left/right cameras
         cv2.putText(frame_left_rgb, "Left Camera", (600, 30), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
         cv2.putText(frame_right_rgb, "Right Camera", (600, 30), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
@@ -67,10 +68,10 @@ async def stream_cameras(session: VuerSession, left_src=0, right_src=1):
                 frame_left_rgb,
                 aspect=1.778,
                 height=1,
-                distanceToCamera=1,
+                distanceToCamera=cam_mat[0][0] / frame_left_rgb.shape[1],
                 layers=1,
                 format="jpeg",
-                quality=50,
+                quality=100,
                 key="background-left",
                 interpolate=True,
             ),
@@ -78,10 +79,10 @@ async def stream_cameras(session: VuerSession, left_src=0, right_src=1):
                 frame_right_rgb,
                 aspect=1.778,
                 height=1,
-                distanceToCamera=1,
+                distanceToCamera=cam_mat[0][0] / frame_right_rgb.shape[1],
                 layers=2,
                 format="jpeg",
-                quality=50,
+                quality=100,
                 key="background-right",
                 interpolate=True,
             ),
@@ -150,16 +151,40 @@ class VuerVR(Teleoperator):
         self.vuer_session = None
 
         self.app = Vuer()
+
+        # @self.app.add_handler("CAMERA_MOVE")
+        # async def on_cam_move(self, event, session, fps=60):
+        #     print("Cam move event")
+        #     self.head_matrix_shared[:] = event.value["camera"]["matrix"]
+        #     self.aspect_shared.value = event.value['camera']['aspect']
+
+        @self.app.add_handler("HAND_MOVE")
+        async def hand_move_handler(event, session):
+            """Handle hand tracking data and print information"""
+            if event.key == 'hands':
+                if event.value['hands']['leftState']: # There is also more info in these but we ignore it
+                    left_mat_raw = event.value['left']
+                    print("left mat", len(left_mat_raw))
+                if event.value['hands']['rightState']:
+                    right_mat_raw = event.value['right']
+                    print("right mat", len(left_mat_raw))
+
         
         @self.app.spawn(start=True)
         async def main(session: VuerSession):
+            session.upsert(
+                Hands(
+                    stream=True,
+                    key="hands",
+                    # Optional: You can hide hands while still getting data
+                    hideLeft=False,
+                    hideRight=True,
+                ),
+                to="bgChildren",
+            )
             self.vuer_session = session
             self.connected = True
             await stream_cameras(session)
-            
-        self.app.add_handler("HAND_MOVE")(self.on_hand_move)
-        self.app.add_handler("CAMERA_MOVE")(self.on_cam_move)
-
 
     def _convert_udp_to_hand_value(self, raw_value: float) -> float:
         """Convert raw finger value to hand value."""
@@ -193,15 +218,6 @@ class VuerVR(Teleoperator):
         # Note: app.run() should be called from the main event loop, not here
         self.connected = True
     
-    def on_hand_move(self, event, session, fps=60):
-        self.left_hand_shared[:] = event.value["leftHand"]
-        self.right_hand_shared[:] = event.value["rightHand"]
-        self.left_landmarks_shared[:] = np.array(event.value["leftLandmarks"]).flatten()
-        self.right_landmarks_shared[:] = np.array(event.value["rightLandmarks"]).flatten()
-
-    async def on_cam_move(self, event, session, fps=60):
-        self.head_matrix_shared[:] = event.value["camera"]["matrix"]
-        self.aspect_shared.value = event.value['camera']['aspect']
 
     @property
     def is_calibrated(self) -> bool:
@@ -287,38 +303,7 @@ class VuerVR(Teleoperator):
 
     def send_feedback(self, feedback: dict[str, float]) -> None:
         """UDP teleoperator doesn't send feedback."""
-
-        ret_left, frame_left = self.cam_left.read()
-        if not ret_left:
-            return
-        frame_left_rgb = cv2.cvtColor(frame_left, cv2.COLOR_BGR2RGB)
-        frame_left_rgb = cv2.undistort(frame_left_rgb, self.cam_mat, self.dist_coeffs)
-        frame_right_rgb = frame_left_rgb
-
-        self.vuer_session.upsert([
-            ImageBackground(
-                frame_left_rgb,
-                aspect=1.778,
-                height=1,
-                distanceToCamera=1,
-                layers=1,
-                format="jpeg",
-                quality=50,
-                key="background-left",
-                interpolate=True,
-            ),
-            ImageBackground(
-                frame_right_rgb,
-                aspect=1.778,
-                height=1,
-                distanceToCamera=1,
-                layers=2,
-                format="jpeg",
-                quality=50,
-                key="background-right",
-                interpolate=True,
-            ),
-        ], to="bgChildren")
+        pass
 
     def disconnect(self) -> None:
         """Disconnect from VR system."""
