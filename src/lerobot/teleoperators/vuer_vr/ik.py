@@ -8,6 +8,7 @@ from pinocchio import casadi as cpin
 from pinocchio.visualize import MeshcatVisualizer
 import os
 import sys
+from pathlib import Path
 
 parent2_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(parent2_dir)
@@ -59,7 +60,9 @@ class KBot_ArmIK:
         self.Unit_Test = Unit_Test
         self.Visualization = Visualization
 
-        self.robot = pin.RobotWrapper.BuildFromURDF('assets/kbot/robot.urdf', 'assets/kbot')
+
+        assets_path = Path('/home/dpsh/kteleop/src/lerobot/teleoperators/vuer_vr/assets')
+        self.robot = pin.RobotWrapper.BuildFromURDF(str(assets_path / 'kbot/robot.urdf'), str(assets_path / 'kbot'))
 
         self.mixed_jointsToLockIDs = [ # joints that shouldn't move
             "base_joint",
