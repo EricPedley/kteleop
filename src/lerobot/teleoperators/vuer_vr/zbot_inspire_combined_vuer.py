@@ -174,17 +174,19 @@ class VuerVR(Teleoperator):
                 if event.value['leftState']: # There is also more info in these but we ignore it
                     left_mat_raw = event.value['left'] # 400-long float array, 25 4x4 matrices
                     left_mat_numpy = np.array(left_mat_raw, dtype=np.float32).reshape(25, 4, 4)
-                    self.left_hand_shared[:] = left_mat_numpy[0]  # Use the first matrix as the hand pose
-                    self.left_landmarks_shared[:] = left_mat_numpy[:, :3, 3].flatten()
+                    self.left_hand_shared[:] = left_mat_numpy[0].T  # Use the first matrix as the hand pose
+                    self.left_landmarks_shared[:] = left_mat_numpy[:, 3, :3].flatten()
 
                 if event.value['rightState']:
                     right_mat_raw = event.value['right']
                     right_mat_numpy = np.array(right_mat_raw, dtype=np.float32).reshape(25, 4, 4)
-                    self.right_hand_shared[:] = right_mat_numpy[0]  # Use the first matrix as the hand pose
-                    self.right_landmarks_shared[:] = right_mat_numpy[:, :3, 3].flatten()
+                    self.right_hand_shared[:] = right_mat_numpy[0].T  # Use the first matrix as the hand pose
+                    # print(self.right_hand_shared[:3, 3])
+                    self.right_landmarks_shared[:] = right_mat_numpy[:, 3, :3].flatten()
                     # if event.value['rightState']['pinch'] or event.value['rightState']['squeeze'] or event.value['rightState']['tap']:
                         # print("Right hand action detected")
                         # print(event.value['rightState'])
+                    # self.get_action()
                     try:
                         print({k: f'{v:.03f}' for k, v in self.get_action().items()})
                     except Exception as e:
@@ -277,8 +279,22 @@ class VuerVR(Teleoperator):
 
         rel_left_fingers = fast_mat_inv(left_wrist_mat) @ left_fingers
         rel_right_fingers = fast_mat_inv(right_wrist_mat) @ right_fingers
-        left_qpos = self.left_retargeting.retarget(rel_left_fingers[:,tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
-        right_qpos = self.right_retargeting.retarget(rel_right_fingers[:,tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+
+        transform_mat = np.array([[ 0,  0,  1],
+                                [-1,  0,  0],
+                                [ 0, -1,  0]])
+        left_qpos = self.left_retargeting.retarget((transform_mat @ rel_left_fingers[:3,tip_indices]).T)
+        right_qpos = self.right_retargeting.retarget((transform_mat @ rel_right_fingers[:3,tip_indices]).T)
+
+        # print right qpos with 3 digits of precision
+        # print([f"{i} {v:.02f}" for i, v in enumerate(right_qpos)])
+
+        # index: 0 and 1
+        # middle: 2, 3
+        # ring: 6, 7
+        # pinkie: 4, 5
+        # thumb yaw: 8
+        # thumb curl: 10, 11
 
         # if latest_data is None:
         #     # No new data, return last known positions
@@ -303,16 +319,9 @@ class VuerVR(Teleoperator):
         #         joint_key = f"{joint_name}.pos"
         #         self.joint_positions[joint_key] = float(position)
         
-        finger_values = right_qpos
-        # Process finger data
-        if len(finger_values) >= 6:
-            self._raw_finger_values = finger_values[:6]
-            
-            for i, raw_value in enumerate(finger_values[:6]):
-                if i < len(self.config.finger_names):
-                    finger_name = self.config.finger_names[i]
-                    hand_value = self._convert_udp_to_hand_value(raw_value)
-                    self.finger_positions[f"{finger_name}.pos"] = hand_value
+        # "thumb", "index", "middle", "ring", "pinky", "extra"
+        for finger_name, value in zip(self.config.finger_names, [right_qpos[10], right_qpos[1], right_qpos[3], right_qpos[7], right_qpos[5], right_qpos[11]]):
+            self.finger_positions[f"{finger_name}.pos"] = value
         
         self.last_update_time = time.time()
             
