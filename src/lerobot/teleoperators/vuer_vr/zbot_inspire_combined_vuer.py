@@ -19,6 +19,7 @@ from ..teleoperator import Teleoperator
 from .config_zbot_inspire_combined_vuer import VuerVRConfig
 from dex_retargeting.retargeting_config import RetargetingConfig
 from .ik import KBot_ArmIK
+import traceback
 
 def fast_mat_inv(mat):
     ret = np.eye(4)
@@ -181,6 +182,15 @@ class VuerVR(Teleoperator):
                     right_mat_numpy = np.array(right_mat_raw, dtype=np.float32).reshape(25, 4, 4)
                     self.right_hand_shared[:] = right_mat_numpy[0]  # Use the first matrix as the hand pose
                     self.right_landmarks_shared[:] = right_mat_numpy[:, :3, 3].flatten()
+                    if event.value['rightState']['pinch'] or event.value['rightState']['squeeze'] or event.value['rightState']['tap']:
+                        print("Right hand action detected")
+                        print(event.value['rightState'])
+                        try:
+                            print(self.get_action())
+                        except Exception as e:
+                            traceback.print_exc()
+
+                
 
         
         @self.app.spawn(start=True)
@@ -267,8 +277,8 @@ class VuerVR(Teleoperator):
 
         rel_left_fingers = fast_mat_inv(left_wrist_mat) @ left_fingers
         rel_right_fingers = fast_mat_inv(right_wrist_mat) @ right_fingers
-        left_qpos = self.left_retargeting.retarget(rel_left_fingers[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
-        right_qpos = self.right_retargeting.retarget(rel_right_fingers[tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+        left_qpos = self.left_retargeting.retarget(rel_left_fingers[:,tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
+        right_qpos = self.right_retargeting.retarget(rel_right_fingers[:,tip_indices])[[4, 5, 6, 7, 10, 11, 8, 9, 0, 1, 2, 3]]
 
         # if latest_data is None:
         #     # No new data, return last known positions
