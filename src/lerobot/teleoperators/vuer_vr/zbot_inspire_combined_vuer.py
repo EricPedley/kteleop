@@ -59,11 +59,12 @@ async def stream_cameras(session: VuerSession, left_src=0, right_src=1):
         frame_left_rgb = cv2.cvtColor(frame_left, cv2.COLOR_BGR2RGB)
         # frame_right_rgb = cv2.cvtColor(frame_right, cv2.COLOR_BGR2RGB)
         frame_left_rgb = cv2.undistort(frame_left_rgb, cam_mat, dist_coeffs)
+        frame_left_rgb = cv2.resize(frame_left_rgb, (640, 360), interpolation=cv2.INTER_LINEAR)
         frame_right_rgb = frame_left_rgb.copy()
         # frame_right_rgb = cv2.undistort(frame_right_rgb, cam_mat, dist_coeffs)
         # Add text labels for left/right cameras
-        cv2.putText(frame_left_rgb, "Left Camera", (600, 30), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
-        cv2.putText(frame_right_rgb, "Right Camera", (600, 30), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
+        # cv2.putText(frame_left_rgb, "Left Camera", (600, 30), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
+        # cv2.putText(frame_right_rgb, "Right Camera", (600, 30), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
         # Send both images as ImageBackground objects for left/right eye
         interpupilary_dist = 0
 
@@ -77,7 +78,7 @@ async def stream_cameras(session: VuerSession, left_src=0, right_src=1):
             ImageBackground(
                 frame_left_rgb,
                 aspect=1.778,
-                height=1,
+                height=2,
                 distanceToCamera=distance_to_camera,
                 position=[-interpupilary_dist/2, y_offset, z_offset],
                 layers=1,
@@ -89,7 +90,7 @@ async def stream_cameras(session: VuerSession, left_src=0, right_src=1):
             ImageBackground(
                 frame_right_rgb,
                 aspect=1.778,
-                height=1,
+                height=2,
                 distanceToCamera=distance_to_camera,
                 position=[-interpupilary_dist/2, y_offset, z_offset],
                 layers=2,
@@ -310,7 +311,9 @@ class VuerVR(Teleoperator):
         rel_right_wrist_mat[0:3, 3] = rel_right_wrist_mat[0:3, 3] - head_mat[0:3, 3]
                 
             
-        # joints = self.arm_ik.solve_ik(rel_left_wrist_mat, rel_right_wrist_mat)
+        # when left fingers is all zeros (homogenous coords) and rel_left_wrist_mat is identity, we need to not send the position.
+        joints = self.arm_ik.solve_ik(rel_left_wrist_mat, rel_right_wrist_mat)
+        print("Arm joints:", joints)
         # # Process joint data
         # for joint_id_str, position in joints.items():
         #     joint_id = int(joint_id_str)
