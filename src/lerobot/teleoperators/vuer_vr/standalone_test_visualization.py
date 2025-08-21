@@ -13,20 +13,29 @@ import numpy as np
 pi = 3.1415
 
 file_absolute_parent = str(Path(__file__).absolute().parent)
-# urdfpy needs the mesh URLs to be absolute paths so we replace the relative URLS
-urdf_path = f'{file_absolute_parent}/assets/inspire_hand/inspire_hand_right.urdf'
-urdf_file_contents = open(urdf_path).read()
 
-# Replace both package:/ paths and relative mesh paths with absolute paths
-urdf_assets_path = f'{file_absolute_parent}/assets/inspire_hand'
-urdf_file_contents = urdf_file_contents.replace('package:/', file_absolute_parent)
-urdf_file_contents = urdf_file_contents.replace('./meshes/', f'{urdf_assets_path}/meshes/')
+def load_urdf_with_absolute_paths(urdf_relative_path, assets_folder):
+    """Load URDF with absolute mesh paths"""
+    urdf_path = f'{file_absolute_parent}/{urdf_relative_path}'
+    urdf_file_contents = open(urdf_path).read()
 
-class dumb_hack(io.StringIO):
-    name = 'dummy name to get urdfpy to comply'
-urdf_file = dumb_hack(urdf_file_contents)
+    # Replace both package:/ paths and relative mesh paths with absolute paths
+    urdf_assets_path = f'{file_absolute_parent}/{assets_folder}'
+    urdf_file_contents = urdf_file_contents.replace('package:/', file_absolute_parent)
+    # Replace specific patterns - order matters to avoid double replacement
+    urdf_file_contents = urdf_file_contents.replace('filename="./meshes/', f'filename="{urdf_assets_path}/meshes/')
+    urdf_file_contents = urdf_file_contents.replace('filename="meshes/', f'filename="{urdf_assets_path}/meshes/')
 
-robot = URDF.load(urdf_file)
+    class DumbHack(io.StringIO):
+        name = 'dummy name to get urdfpy to comply'
+    urdf_file = DumbHack(urdf_file_contents)
+
+    return URDF.load(urdf_file)
+
+# Load all three robots
+right_hand_robot = load_urdf_with_absolute_paths('assets/inspire_hand/inspire_hand_right.urdf', 'assets/inspire_hand')
+left_hand_robot = load_urdf_with_absolute_paths('assets/inspire_hand/inspire_hand_left.urdf', 'assets/inspire_hand')
+kbot_robot = load_urdf_with_absolute_paths('assets/kbot/robot.urdf', 'assets/kbot')
 
 app = Vuer(static_root=Path(__file__).parent / "assets")
 
@@ -63,16 +72,41 @@ async def hand_move_handler(event, session):
 @app.spawn(start=True)
 async def main(sess: VuerSession):
     sess.set @ DefaultScene(
+        # Right hand
         Movable(
             Urdf(
                 src="http://localhost:8012/static/inspire_hand/inspire_hand_right.urdf",
                 jointValues={
-                    k: 0.0 for k in robot.actuated_joint_names
+                    k: 0.0 for k in right_hand_robot.actuated_joint_names
                 },
-                key="robot",
+                key="right_hand",
             ),
-            position=[0, 0, 0.3],
+            position=[0.3, 0, 0.3],
             scale=10,
+        ),
+        # Left hand
+        Movable(
+            Urdf(
+                src="http://localhost:8012/static/inspire_hand/inspire_hand_left.urdf",
+                jointValues={
+                    k: 0.0 for k in left_hand_robot.actuated_joint_names
+                },
+                key="left_hand",
+            ),
+            position=[-0.3, 0, 0.3],
+            scale=10,
+        ),
+        # Kbot robot
+        Movable(
+            Urdf(
+                src="http://localhost:8012/static/kbot/robot.urdf",
+                jointValues={
+                    k: 0.0 for k in kbot_robot.actuated_joint_names
+                },
+                key="kbot",
+            ),
+            position=[0, 0.5, 0.0],
+            scale=1,
         ),
         grid=True,
     )
@@ -91,14 +125,78 @@ async def main(sess: VuerSession):
 
     await sleep(0.1)
 
-    while True:
+    # Animation variables
+    time = 0.0
+    dt = 0.016  # 60 FPS
 
-        sess.update @ Urdf(
-            src="http://localhost:8012/static/inspire_hand/inspire_hand_right.urdf",
-            jointValues={
-                k: v for k, v in zip(robot.actuated_joint_names, np.zeros(len(robot.actuated_joint_names)))
-            },
-            key="robot",
+    while True:
+        # Simple sinusoidal animations for positions
+        right_hand_x = 0.3 + 0.1 * math.sin(time * 0.5)
+        right_hand_y = 0.05 * math.cos(time * 0.7)
+        right_hand_z = 0.3 + 0.05 * math.sin(time * 0.3)
+
+        left_hand_x = -0.3 + 0.1 * math.sin(time * 0.4)
+        left_hand_y = 0.05 * math.cos(time * 0.6)
+        left_hand_z = 0.3 + 0.05 * math.sin(time * 0.35)
+
+        kbot_x = 0.1 * math.sin(time * 0.3)
+        kbot_y = 0.5 + 0.05 * math.cos(time * 0.5)
+        kbot_z = 0.0
+
+        # Animate right hand joint values
+        right_hand_joint_values = {}
+        for i, joint_name in enumerate(right_hand_robot.actuated_joint_names):
+            frequency = 0.5 + i * 0.1
+            amplitude = 0.3 + (i % 3) * 0.2
+            phase = i * math.pi / 4
+            right_hand_joint_values[joint_name] = amplitude * math.sin(time * frequency + phase)
+
+        # Animate left hand joint values
+        left_hand_joint_values = {}
+        for i, joint_name in enumerate(left_hand_robot.actuated_joint_names):
+            frequency = 0.6 + i * 0.1
+            amplitude = 0.3 + (i % 3) * 0.2
+            phase = i * math.pi / 4 + math.pi / 2  # Phase offset for variety
+            left_hand_joint_values[joint_name] = amplitude * math.sin(time * frequency + phase)
+
+        # Animate kbot joint values
+        kbot_joint_values = {}
+        for i, joint_name in enumerate(kbot_robot.actuated_joint_names):
+            frequency = 0.3 + i * 0.05
+            amplitude = 0.2 + (i % 4) * 0.1
+            phase = i * math.pi / 6
+            kbot_joint_values[joint_name] = amplitude * math.sin(time * frequency + phase)
+
+        # Update all three robots
+        sess.update @ Movable(
+            Urdf(
+                src="http://localhost:8012/static/inspire_hand/inspire_hand_right.urdf",
+                jointValues=right_hand_joint_values,
+                key="right_hand",
+            ),
+            position=[right_hand_x, right_hand_y, right_hand_z],
+            scale=10,
         )
-        await sleep(0.016)
-        i += 1
+
+        sess.update @ Movable(
+            Urdf(
+                src="http://localhost:8012/static/inspire_hand/inspire_hand_left.urdf",
+                jointValues=left_hand_joint_values,
+                key="left_hand",
+            ),
+            position=[left_hand_x, left_hand_y, left_hand_z],
+            scale=10,
+        )
+
+        sess.update @ Movable(
+            Urdf(
+                src="http://localhost:8012/static/kbot/robot.urdf",
+                jointValues=kbot_joint_values,
+                key="kbot",
+            ),
+            position=[kbot_x, kbot_y, kbot_z],
+            scale=1,
+        )
+
+        await sleep(dt)
+        time += dt
