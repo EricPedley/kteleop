@@ -11,6 +11,8 @@ import io
 import numpy as np
 from scipy.spatial.transform import Rotation
 from scipy.optimize import least_squares
+from line_profiler import profile
+import ikpy
 
 def fast_mat_inv(mat):
     ret = np.eye(4)
@@ -56,8 +58,13 @@ right_hand_shared = np.zeros((4, 4), dtype=np.float32)
 right_landmarks_shared = np.zeros((25,4), dtype=np.float32)
 
 vuer_to_urdf_mat = Rotation.from_euler('xz', (90, 90), degrees=True).as_matrix()
+prev_joint_angles = np.zeros(len(right_hand_robot.actuated_joint_names), dtype=np.float32)
 
 tip_indices = [4, 9, 14, 19, 24]
+
+head_height=  None
+
+@profile
 def right_hand_inverse_kinematics(right_hand_tip_poses):
 
     link_names = [
@@ -65,6 +72,7 @@ def right_hand_inverse_kinematics(right_hand_tip_poses):
     ]
     _joint_names = ['R_thumb_proximal_yaw_joint', 'R_index_proximal_joint', 'R_middle_proximal_joint', 'R_ring_proximal_joint', 'R_pinky_proximal_joint', 'R_thumb_proximal_pitch_joint']
 
+    @profile
     def residuals(joint_angle_vector):
         '''corresponds to '''
         cfg = {
@@ -97,7 +105,7 @@ def right_hand_inverse_kinematics(right_hand_tip_poses):
     jac_sparsity_mat = np.repeat(jac_sparsity_mat, 3, 0)
 
     # Display the frame
-    optim_res = least_squares(residuals, np.zeros(n_joints), bounds=(lower_bounds, upper_bounds), jac_sparsity=jac_sparsity_mat)
+    optim_res = least_squares(residuals, prev_joint_angles,  jac_sparsity=jac_sparsity_mat)
     # print('-'*20)
     # print(f'Average tip position: {np.mean(np.linalg.norm(right_hand_tip_poses, axis=1))}')
     # print("Residuals before:", np.linalg.norm(residuals(np.zeros(n_joints))))
@@ -110,20 +118,24 @@ def right_hand_inverse_kinematics(right_hand_tip_poses):
 
 @app.add_handler("CAMERA_MOVE")
 async def on_cam_move(event, session):
-    global head_matrix_shared
+    global head_matrix_shared, head_height
     head_matrix_shared = np.array(event.value["camera"]["matrix"], dtype=np.float32).reshape(4, 4)
+    if head_height is None and head_matrix_shared[3,1] != 0:
+        head_height = head_matrix_shared[3, 1]
+        print("Updating head height to ", head_height)
+
 
 
 @app.add_handler("HAND_MOVE")
 async def hand_move_handler(event, session):
-    global left_hand_shared, left_landmarks_shared
+    global left_hand_shared, left_landmarks_shared, prev_joint_angles
     """Handle hand tracking data and print information"""
     if event.key == 'hands':
         if 'leftState' in event.value and event.value['leftState']: # There is also more info in these but we ignore it
             left_mat_raw = event.value['left'] # 400-long float array, 25 4x4 matrices
             left_mat_numpy = np.array(left_mat_raw, dtype=np.float32).reshape(25, 4, 4)
             left_hand_shared[:] = left_mat_numpy[0].T  # Use the first matrix as the hand pose
-            left_landmarks_shared[:] = left_mat_numpy[:, 3, :3]
+            left_landmarks_shared[:] = left_mat_numpy[:, 3]
 
         if 'rightState' in event.value and event.value['rightState']:
             right_mat_raw = event.value['right']
@@ -131,15 +143,17 @@ async def hand_move_handler(event, session):
             right_hand_shared[:] = right_mat_numpy[0].T  # Use the first matrix as the hand pose
             right_landmarks_shared[:] = right_mat_numpy[:, 3]
 
-    right_tips = right_landmarks_shared#[tip_indices]
+    right_tips = right_landmarks_shared[tip_indices]
     rel_right_tips = right_tips @ fast_mat_inv(right_hand_shared)
     right_tips_urdf_frame = rel_right_tips[:,:3] @ vuer_to_urdf_mat.T
 
-    right_hand_joints = right_hand_inverse_kinematics(right_tips_urdf_frame)
+    # right_hand_joints = right_hand_inverse_kinematics(right_tips_urdf_frame)
+    right_hand_joints = np.zeros(6)
 
     right_hand_transformed = right_hand_shared.copy()
     right_hand_transformed[:3, :3] = right_hand_transformed[:3, :3] @ vuer_to_urdf_mat
 
+    # prev_joint_angles = right_hand_joints.copy()
 
     session.upsert @ Urdf(
         src="https://10.33.12.199/static/inspire_hand/inspire_hand_right.urdf",
@@ -150,8 +164,34 @@ async def hand_move_handler(event, session):
     )
 
 
+
+    left_hand_transformed = left_hand_shared.copy()
+    left_hand_transformed[:3, :3] = left_hand_transformed[:3, :3] @ vuer_to_urdf_mat
+    session.upsert @ Urdf(
+        src="https://10.33.12.199/static/inspire_hand/inspire_hand_left.urdf",
+        jointValues={k: 0.0 for k in left_hand_robot.actuated_joint_names},
+        matrix = left_hand_transformed.T.flatten().tolist(),
+        scale=1,
+        key="left_hand",
+    )
+
+    kbot_position = np.array([0,1 if head_height is None else head_height+0.5,0])
+    kbot_rot_mat = Rotation.from_euler('xy', [-90, 90], degrees=True).as_matrix()
+    kbot_matrix = np.eye(4)
+    kbot_matrix[:3, :3] = kbot_rot_mat
+    kbot_matrix[:3, 3] = kbot_position
+    session.upsert @ Urdf(
+        src="https://10.33.12.199/static/kbot/robot.urdf",
+        jointValues=np.zeros(len(kbot_robot.actuated_joint_names)).tolist(),
+        matrix=kbot_matrix.T.flatten().tolist(),
+        scale=1,
+        key="kbot",
+    )
+
+
 @app.spawn(start=True)
 async def main(sess: VuerSession):
+    global head_height
     sess.set @ DefaultScene(
         grid=True,
     )
@@ -177,15 +217,6 @@ async def main(sess: VuerSession):
     while True:
         # Simple sinusoidal animations for positions
 
-        left_hand_x = -0.3 + 0.1 * math.sin(time * 0.4)
-        left_hand_y = 0.05 * math.cos(time * 0.6)
-        left_hand_z = 0.3 + 0.05 * math.sin(time * 0.35)
-
-        kbot_x = 0.1 * math.sin(time * 0.3)
-        kbot_y = 0.5 + 0.05 * math.cos(time * 0.5)
-        kbot_z = 0.0
-
-
         # Animate kbot joint values
         kbot_joint_values = {}
         for i, joint_name in enumerate(kbot_robot.actuated_joint_names):
@@ -196,21 +227,8 @@ async def main(sess: VuerSession):
 
         # Update all three robots
 
-        # sess.upsert @ Urdf(
-        #     src="https://10.33.12.199/static/inspire_hand/inspire_hand_left.urdf",
-        #     jointValues={k: 0.0 for k in left_hand_robot.actuated_joint_names},
-        #     position=[left_hand_x, left_hand_y, left_hand_z],
-        #     scale=1,
-        #     key="left_hand",
-        # )
 
-        # sess.upsert @ Urdf(
-        #     src="https://10.33.12.199/static/kbot/robot.urdf",
-        #     jointValues=kbot_joint_values,
-        #     position=[kbot_x, kbot_y, kbot_z],
-        #     scale=1,
-        #     key="kbot",
-        # )
+
 
         await sleep(dt)
         time += dt
