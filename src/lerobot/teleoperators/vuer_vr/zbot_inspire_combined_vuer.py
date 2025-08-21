@@ -158,16 +158,13 @@ class VuerVR(Teleoperator):
         self.head_matrix_shared = np.eye(4, dtype=np.float32)
         self.left_landmarks_shared = np.zeros(75, dtype=np.float32)  # 25 landmarks * 3 coordinates
         self.right_landmarks_shared = np.zeros(75, dtype=np.float32)
-        self.aspect_shared = type('obj', (object,), {'value': 1.0})()
         self.vuer_session = None
 
         self.app = Vuer()
 
-        # @self.app.add_handler("CAMERA_MOVE")
-        # async def on_cam_move(self, event, session, fps=60):
-        #     print("Cam move event")
-        #     self.head_matrix_shared[:] = event.value["camera"]["matrix"]
-        #     self.aspect_shared.value = event.value['camera']['aspect']
+        @self.app.add_handler("CAMERA_MOVE")
+        async def on_cam_move(event, session):
+            self.head_matrix_shared[:] = np.array(event.value["camera"]["matrix"], dtype=np.float32).reshape(4, 4)
 
         @self.app.add_handler("HAND_MOVE")
         async def hand_move_handler(event, session):
