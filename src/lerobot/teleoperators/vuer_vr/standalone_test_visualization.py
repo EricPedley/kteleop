@@ -42,6 +42,7 @@ def load_urdf_with_absolute_paths(urdf_relative_path, assets_folder):
 
 # Load all three robots
 right_hand_robot = load_urdf_with_absolute_paths('assets/inspire_hand/inspire_hand_right.urdf', 'assets/inspire_hand')
+print(right_hand_robot.actuated_joint_names)
 left_hand_robot = load_urdf_with_absolute_paths('assets/inspire_hand/inspire_hand_left.urdf', 'assets/inspire_hand')
 kbot_robot = load_urdf_with_absolute_paths('assets/kbot/robot.urdf', 'assets/kbot')
 
@@ -56,17 +57,20 @@ right_landmarks_shared = np.zeros((25,4), dtype=np.float32)
 
 vuer_to_urdf_mat = Rotation.from_euler('xz', (90, 90), degrees=True).as_matrix()
 
+tip_indices = [4, 9, 14, 19, 24]
 def right_hand_inverse_kinematics(right_hand_tip_poses):
+
+    link_names = [
+        'R_thumb_tip','R_index_tip', 'R_middle_tip', 'R_ring_tip', 'R_pinky_tip' 
+    ]
+    _joint_names = ['R_thumb_proximal_yaw_joint', 'R_index_proximal_joint', 'R_middle_proximal_joint', 'R_ring_proximal_joint', 'R_pinky_proximal_joint', 'R_thumb_proximal_pitch_joint']
+
     def residuals(joint_angle_vector):
         '''corresponds to '''
         cfg = {
             k: a
             for k, a in zip(right_hand_robot.actuated_joints, joint_angle_vector)
         }
-
-        link_names = [
-            'R_thumb_tip','R_index_tip', 'R_middle_tip', 'R_ring_tip', 'R_pinky_tip' 
-        ]
         hand_positions = right_hand_robot.link_fk(cfg, links = link_names)
         positions = np.array([hand_positions[right_hand_robot.link_map[name]][:3, 3] for name in link_names])
         err = positions - right_hand_tip_poses
@@ -81,8 +85,19 @@ def right_hand_inverse_kinematics(right_hand_tip_poses):
         lower_bounds.append(joint_limits_dict[joint_name][0])
         upper_bounds.append(joint_limits_dict[joint_name][1])
 
+    jac_sparsity_mat = np.zeros((len(link_names), n_joints), dtype=np.int32)
+    # link name index -> joint name index
+    jac_sparsity_mat[0, 0] = 1
+    jac_sparsity_mat[0, 5] = 1
+    jac_sparsity_mat[1, 1] = 1
+    jac_sparsity_mat[2, 2] = 1
+    jac_sparsity_mat[3, 3] = 1
+    jac_sparsity_mat[4, 4] = 1
+    # repeat 3 times for each link
+    jac_sparsity_mat = np.repeat(jac_sparsity_mat, 3, 0)
+
     # Display the frame
-    optim_res = least_squares(residuals, np.zeros(n_joints), bounds=(lower_bounds, upper_bounds))
+    optim_res = least_squares(residuals, np.zeros(n_joints), bounds=(lower_bounds, upper_bounds), jac_sparsity=jac_sparsity_mat)
     # print('-'*20)
     # print(f'Average tip position: {np.mean(np.linalg.norm(right_hand_tip_poses, axis=1))}')
     # print("Residuals before:", np.linalg.norm(residuals(np.zeros(n_joints))))
@@ -116,8 +131,7 @@ async def hand_move_handler(event, session):
             right_hand_shared[:] = right_mat_numpy[0].T  # Use the first matrix as the hand pose
             right_landmarks_shared[:] = right_mat_numpy[:, 3]
 
-    tip_indices = [4, 9, 14, 19, 24]
-    right_tips = right_landmarks_shared[tip_indices]
+    right_tips = right_landmarks_shared#[tip_indices]
     rel_right_tips = right_tips @ fast_mat_inv(right_hand_shared)
     right_tips_urdf_frame = rel_right_tips[:,:3] @ vuer_to_urdf_mat.T
 
