@@ -143,21 +143,38 @@ async def main(sess: VuerSession):
         kbot_y = 0.5 + 0.05 * math.cos(time * 0.5)
         kbot_z = 0.0
 
-        # Animate right hand joint values
+        # Animate right hand joint values with appropriate ranges
         right_hand_joint_values = {}
-        for i, joint_name in enumerate(right_hand_robot.actuated_joint_names):
+        for i, joint in enumerate(right_hand_robot.actuated_joints):
             frequency = 0.5 + i * 0.1
-            amplitude = 0.3 + (i % 3) * 0.2
             phase = i * math.pi / 4
-            right_hand_joint_values[joint_name] = amplitude * math.sin(time * frequency + phase)
+            
+            # Use the actual joint limits for realistic animation
+            joint_range = joint.limit.upper - joint.limit.lower
+            joint_center = (joint.limit.upper + joint.limit.lower) / 2
+            amplitude = joint_range * 0.4  # Use 40% of the joint range
+            
+            value = joint_center + amplitude * math.sin(time * frequency + phase)
+            right_hand_joint_values[joint.name] = max(joint.limit.lower, min(joint.limit.upper, value))
 
-        # Animate left hand joint values
+        # Animate left hand joint values with appropriate ranges
         left_hand_joint_values = {}
-        for i, joint_name in enumerate(left_hand_robot.actuated_joint_names):
+        for i, joint in enumerate(left_hand_robot.actuated_joints):
             frequency = 0.6 + i * 0.1
-            amplitude = 0.3 + (i % 3) * 0.2
             phase = i * math.pi / 4 + math.pi / 2  # Phase offset for variety
-            left_hand_joint_values[joint_name] = amplitude * math.sin(time * frequency + phase)
+
+            # Use the actual joint limits for realistic animation
+            joint_range = joint.limit.upper - joint.limit.lower
+            joint_center = (joint.limit.upper + joint.limit.lower) / 2
+            amplitude = joint_range * 0.4  # Use 40% of the joint range
+
+            value = joint_center + amplitude * math.sin(time * frequency + phase)
+            left_hand_joint_values[joint.name] = max(joint.limit.lower, min(joint.limit.upper, value))
+
+        # Make the first finger very obvious for debugging
+        if len(left_hand_joint_values) > 1:
+            first_joint_name = list(left_hand_joint_values.keys())[1]  # Use index finger
+            left_hand_joint_values[first_joint_name] = 0.85 * (1 + math.sin(time * 2))  # Very obvious animation
 
         # Animate kbot joint values
         kbot_joint_values = {}
@@ -168,7 +185,7 @@ async def main(sess: VuerSession):
             kbot_joint_values[joint_name] = amplitude * math.sin(time * frequency + phase)
 
         # Update all three robots
-        sess.update @ Movable(
+        sess.upsert @ Movable(
             Urdf(
                 src="http://localhost:8012/static/inspire_hand/inspire_hand_right.urdf",
                 jointValues=right_hand_joint_values,
@@ -178,7 +195,7 @@ async def main(sess: VuerSession):
             scale=10,
         )
 
-        sess.update @ Movable(
+        sess.upsert @ Movable(
             Urdf(
                 src="http://localhost:8012/static/inspire_hand/inspire_hand_left.urdf",
                 jointValues=left_hand_joint_values,
@@ -188,7 +205,7 @@ async def main(sess: VuerSession):
             scale=10,
         )
 
-        sess.update @ Movable(
+        sess.upsert @ Movable(
             Urdf(
                 src="http://localhost:8012/static/kbot/robot.urdf",
                 jointValues=kbot_joint_values,
