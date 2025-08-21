@@ -218,7 +218,7 @@ class KBot_ArmIK:
         self.opti.set_value(self.var_q_last, self.init_data)  # for smooth
 
         try:
-            sol = self.opti.solve()  # casadi optimization
+            sol = self.opti.solve()  # casadi optimization (crashes here!)
             # sol = self.opti.solve_limited()
 
             sol_q = self.opti.value(self.var_q)  # IK
