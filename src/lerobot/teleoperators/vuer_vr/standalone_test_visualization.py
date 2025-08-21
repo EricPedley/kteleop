@@ -9,6 +9,7 @@ from vuer.schemas import DefaultScene, Urdf, Hands
 from urdfpy import URDF
 import io
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 pi = 3.1415
 
@@ -51,6 +52,7 @@ async def on_cam_move(event, session):
     global head_matrix_shared
     head_matrix_shared = np.array(event.value["camera"]["matrix"], dtype=np.float32).reshape(4, 4)
 
+
 @app.add_handler("HAND_MOVE")
 async def hand_move_handler(event, session):
     global left_hand_shared, left_landmarks_shared
@@ -68,13 +70,17 @@ async def hand_move_handler(event, session):
             right_hand_shared[:] = right_mat_numpy[0].T  # Use the first matrix as the hand pose
             right_landmarks_shared[:] = right_mat_numpy[:, 3, :3].flatten()
 
-    right_hand_x = float(right_hand_shared[0, 3])
-    right_hand_y = float(right_hand_shared[1, 3])
-    right_hand_z = float(right_hand_shared[2, 3])
+    transform_mat = Rotation.from_euler('xz', (90, 90), degrees=True).as_matrix()
+
+    right_hand_transformed = right_hand_shared.copy()
+    right_hand_transformed[:3, :3] = right_hand_transformed[:3, :3] @ transform_mat
+
+
+
     session.upsert @ Urdf(
         src="https://10.33.12.199/static/inspire_hand/inspire_hand_right.urdf",
         jointValues={k: 0.0 for k in right_hand_robot.actuated_joint_names},
-        position=[right_hand_x, right_hand_y, right_hand_z],
+        matrix = right_hand_transformed.T.flatten().tolist(),
         scale=1,
         key="right_hand",
     )
