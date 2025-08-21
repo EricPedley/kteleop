@@ -182,13 +182,13 @@ class VuerVR(Teleoperator):
                     right_mat_numpy = np.array(right_mat_raw, dtype=np.float32).reshape(25, 4, 4)
                     self.right_hand_shared[:] = right_mat_numpy[0]  # Use the first matrix as the hand pose
                     self.right_landmarks_shared[:] = right_mat_numpy[:, :3, 3].flatten()
-                    if event.value['rightState']['pinch'] or event.value['rightState']['squeeze'] or event.value['rightState']['tap']:
-                        print("Right hand action detected")
-                        print(event.value['rightState'])
-                        try:
-                            print(self.get_action())
-                        except Exception as e:
-                            traceback.print_exc()
+                    # if event.value['rightState']['pinch'] or event.value['rightState']['squeeze'] or event.value['rightState']['tap']:
+                        # print("Right hand action detected")
+                        # print(event.value['rightState'])
+                    try:
+                        print({k: f'{v:.03f}' for k, v in self.get_action().items()})
+                    except Exception as e:
+                        traceback.print_exc()
 
                 
 
@@ -201,7 +201,7 @@ class VuerVR(Teleoperator):
                     key="hands",
                     # Optional: You can hide hands while still getting data
                     hideLeft=False,
-                    hideRight=True,
+                    hideRight=False,
                 ),
                 to="bgChildren",
             )
@@ -294,14 +294,14 @@ class VuerVR(Teleoperator):
         rel_right_wrist_mat[0:3, 3] = rel_right_wrist_mat[0:3, 3] - head_mat[0:3, 3]
                 
             
-        joints = self.arm_ik.solve_ik(rel_left_wrist_mat, rel_right_wrist_mat)
-        # Process joint data
-        for joint_id_str, position in joints.items():
-            joint_id = int(joint_id_str)
-            if joint_id in self.joint_id_to_name:
-                joint_name = self.joint_id_to_name[joint_id]
-                joint_key = f"{joint_name}.pos"
-                self.joint_positions[joint_key] = float(position)
+        # joints = self.arm_ik.solve_ik(rel_left_wrist_mat, rel_right_wrist_mat)
+        # # Process joint data
+        # for joint_id_str, position in joints.items():
+        #     joint_id = int(joint_id_str)
+        #     if joint_id in self.joint_id_to_name:
+        #         joint_name = self.joint_id_to_name[joint_id]
+        #         joint_key = f"{joint_name}.pos"
+        #         self.joint_positions[joint_key] = float(position)
         
         finger_values = right_qpos
         # Process finger data
@@ -318,10 +318,10 @@ class VuerVR(Teleoperator):
             
         # Combine all actions with prefixes
         action = {}
-        action.update({f"zbot_{k}": v for k, v in self.joint_positions.items()})
+        # action.update({f"zbot_{k}": v for k, v in self.joint_positions.items()})
         action.update({f"hand_{k}": v for k, v in self.finger_positions.items()})
         
-        logger.debug(f"Received combined data: {len(joints)} joints, {len(finger_values)} fingers")
+        # logger.debug(f"Received combined data: {len(joints)} joints, {len(finger_values)} fingers")
         return action
 
     def send_feedback(self, feedback: dict[str, float]) -> None:
