@@ -3,7 +3,7 @@ from asyncio import sleep
 from pathlib import Path
 
 from vuer import Vuer, VuerSession
-from vuer.schemas import DefaultScene, Urdf, Movable, Hands
+from vuer.schemas import DefaultScene, Urdf, Hands
 
 
 from urdfpy import URDF
@@ -72,42 +72,6 @@ async def hand_move_handler(event, session):
 @app.spawn(start=True)
 async def main(sess: VuerSession):
     sess.set @ DefaultScene(
-        # Right hand
-        Movable(
-            Urdf(
-                src="http://localhost:8012/static/inspire_hand/inspire_hand_right.urdf",
-                jointValues={
-                    k: 0.0 for k in right_hand_robot.actuated_joint_names
-                },
-                key="right_hand",
-            ),
-            position=[0.3, 0, 0.3],
-            scale=10,
-        ),
-        # Left hand
-        Movable(
-            Urdf(
-                src="http://localhost:8012/static/inspire_hand/inspire_hand_left.urdf",
-                jointValues={
-                    k: 0.0 for k in left_hand_robot.actuated_joint_names
-                },
-                key="left_hand",
-            ),
-            position=[-0.3, 0, 0.3],
-            scale=10,
-        ),
-        # Kbot robot
-        Movable(
-            Urdf(
-                src="http://localhost:8012/static/kbot/robot.urdf",
-                jointValues={
-                    k: 0.0 for k in kbot_robot.actuated_joint_names
-                },
-                key="kbot",
-            ),
-            position=[0, 0.5, 0.0],
-            scale=1,
-        ),
         grid=True,
     )
 
@@ -185,34 +149,28 @@ async def main(sess: VuerSession):
             kbot_joint_values[joint_name] = amplitude * math.sin(time * frequency + phase)
 
         # Update all three robots
-        sess.upsert @ Movable(
-            Urdf(
-                src="http://localhost:8012/static/inspire_hand/inspire_hand_right.urdf",
-                jointValues=right_hand_joint_values,
-                key="right_hand",
-            ),
+        sess.upsert @ Urdf(
+            src="http://localhost:8012/static/inspire_hand/inspire_hand_right.urdf",
+            jointValues=right_hand_joint_values,
             position=[right_hand_x, right_hand_y, right_hand_z],
-            scale=10,
+            scale=1,
+            key="right_hand",
         )
 
-        sess.upsert @ Movable(
-            Urdf(
-                src="http://localhost:8012/static/inspire_hand/inspire_hand_left.urdf",
-                jointValues=left_hand_joint_values,
-                key="left_hand",
-            ),
+        sess.upsert @ Urdf(
+            src="http://localhost:8012/static/inspire_hand/inspire_hand_left.urdf",
+            jointValues=left_hand_joint_values,
             position=[left_hand_x, left_hand_y, left_hand_z],
-            scale=10,
+            scale=1,
+            key="left_hand",
         )
 
-        sess.upsert @ Movable(
-            Urdf(
-                src="http://localhost:8012/static/kbot/robot.urdf",
-                jointValues=kbot_joint_values,
-                key="kbot",
-            ),
+        sess.upsert @ Urdf(
+            src="http://localhost:8012/static/kbot/robot.urdf",
+            jointValues=kbot_joint_values,
             position=[kbot_x, kbot_y, kbot_z],
             scale=1,
+            key="kbot",
         )
 
         await sleep(dt)
