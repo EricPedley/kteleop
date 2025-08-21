@@ -10,6 +10,13 @@ from urdfpy import URDF
 import io
 import numpy as np
 from scipy.spatial.transform import Rotation
+from scipy.optimize import least_squares
+
+def fast_mat_inv(mat):
+    ret = np.eye(4)
+    ret[:3, :3] = mat[:3, :3].T
+    ret[:3, 3] = -mat[:3, :3].T @ mat[:3, 3]
+    return ret
 
 pi = 3.1415
 
@@ -42,10 +49,49 @@ app = Vuer(static_root=Path(__file__).parent / "assets")
 
 head_matrix_shared = np.zeros((4, 4), dtype=np.float32)
 left_hand_shared = np.zeros((4, 4), dtype=np.float32)
-left_landmarks_shared = np.zeros((25 * 3,), dtype=np.float32)
+left_landmarks_shared = np.zeros((25,4), dtype=np.float32)
 
 right_hand_shared = np.zeros((4, 4), dtype=np.float32)
-right_landmarks_shared = np.zeros((25 * 3,), dtype=np.float32)
+right_landmarks_shared = np.zeros((25,4), dtype=np.float32)
+
+vuer_to_urdf_mat = Rotation.from_euler('xz', (90, 90), degrees=True).as_matrix()
+
+def right_hand_inverse_kinematics(right_hand_tip_poses):
+    def residuals(joint_angle_vector):
+        '''corresponds to '''
+        cfg = {
+            k: a
+            for k, a in zip(right_hand_robot.actuated_joints, joint_angle_vector)
+        }
+
+        link_names = [
+            'R_thumb_tip','R_index_tip', 'R_middle_tip', 'R_ring_tip', 'R_pinky_tip' 
+        ]
+        hand_positions = right_hand_robot.link_fk(cfg, links = link_names)
+        positions = np.array([hand_positions[right_hand_robot.link_map[name]][:3, 3] for name in link_names])
+        err = positions - right_hand_tip_poses
+        return err.flatten()
+
+    n_joints = len(right_hand_robot.actuated_joints)
+
+    joint_limits_dict = dict(zip(right_hand_robot.actuated_joint_names, right_hand_robot.joint_limits, strict=True))
+    lower_bounds = []
+    upper_bounds = []
+    for joint_name in right_hand_robot.actuated_joint_names:
+        lower_bounds.append(joint_limits_dict[joint_name][0])
+        upper_bounds.append(joint_limits_dict[joint_name][1])
+
+    # Display the frame
+    optim_res = least_squares(residuals, np.zeros(n_joints), bounds=(lower_bounds, upper_bounds))
+    # print('-'*20)
+    # print(f'Average tip position: {np.mean(np.linalg.norm(right_hand_tip_poses, axis=1))}')
+    # print("Residuals before:", np.linalg.norm(residuals(np.zeros(n_joints))))
+    # print("Residuals after:", np.linalg.norm(residuals(optim_res.x)))
+    # print(f"Joint angles: {optim_res.x}")
+
+
+    return optim_res.x
+    # return np.zeros(n_joints)
 
 @app.add_handler("CAMERA_MOVE")
 async def on_cam_move(event, session):
@@ -62,24 +108,28 @@ async def hand_move_handler(event, session):
             left_mat_raw = event.value['left'] # 400-long float array, 25 4x4 matrices
             left_mat_numpy = np.array(left_mat_raw, dtype=np.float32).reshape(25, 4, 4)
             left_hand_shared[:] = left_mat_numpy[0].T  # Use the first matrix as the hand pose
-            left_landmarks_shared[:] = left_mat_numpy[:, 3, :3].flatten()
+            left_landmarks_shared[:] = left_mat_numpy[:, 3, :3]
 
         if 'rightState' in event.value and event.value['rightState']:
             right_mat_raw = event.value['right']
             right_mat_numpy = np.array(right_mat_raw, dtype=np.float32).reshape(25, 4, 4)
             right_hand_shared[:] = right_mat_numpy[0].T  # Use the first matrix as the hand pose
-            right_landmarks_shared[:] = right_mat_numpy[:, 3, :3].flatten()
+            right_landmarks_shared[:] = right_mat_numpy[:, 3]
 
-    transform_mat = Rotation.from_euler('xz', (90, 90), degrees=True).as_matrix()
+    tip_indices = [4, 9, 14, 19, 24]
+    right_tips = right_landmarks_shared[tip_indices]
+    rel_right_tips = right_tips @ fast_mat_inv(right_hand_shared)
+    right_tips_urdf_frame = rel_right_tips[:,:3] @ vuer_to_urdf_mat.T
+
+    right_hand_joints = right_hand_inverse_kinematics(right_tips_urdf_frame)
 
     right_hand_transformed = right_hand_shared.copy()
-    right_hand_transformed[:3, :3] = right_hand_transformed[:3, :3] @ transform_mat
-
+    right_hand_transformed[:3, :3] = right_hand_transformed[:3, :3] @ vuer_to_urdf_mat
 
 
     session.upsert @ Urdf(
         src="https://10.33.12.199/static/inspire_hand/inspire_hand_right.urdf",
-        jointValues={k: 0.0 for k in right_hand_robot.actuated_joint_names},
+        jointValues=dict(zip(right_hand_robot.actuated_joint_names, right_hand_joints, strict=True)),
         matrix = right_hand_transformed.T.flatten().tolist(),
         scale=1,
         key="right_hand",
