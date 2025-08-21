@@ -59,6 +59,7 @@ async def hand_move_handler(event, session):
             right_hand_shared[:] = right_mat_numpy[0].T  # Use the first matrix as the hand pose
             right_landmarks_shared[:] = right_mat_numpy[:, 3, :3].flatten()
 
+
 @app.spawn(start=True)
 async def main(sess: VuerSession):
     sess.set @ DefaultScene(
@@ -90,23 +91,12 @@ async def main(sess: VuerSession):
 
     await sleep(0.1)
 
-    i = 0
     while True:
+
         sess.update @ Urdf(
-            src="http://localhost:8012/static/robots/mini_cheetah/mini_cheetah.urdf",
+            src="http://localhost:8012/static/inspire_hand/inspire_hand_right.urdf",
             jointValues={
-                "FL_hip_joint": -0.2,
-                "RL_hip_joint": -0.2,
-                "FR_hip_joint": 0.2,
-                "RR_hip_joint": 0.2,
-                "FL_thigh_joint": -0.25 * pi,
-                "RL_thigh_joint": -0.25 * pi,
-                "FR_thigh_joint": 0.5 * math.sin(i * 0.1) - 1.3,
-                "RR_thigh_joint": -0.25 * pi,
-                "FL_calf_joint": 0.5 * pi,
-                "RL_calf_joint": 0.5 * pi,
-                "FR_calf_joint": -0.5 * math.sin(i * 0.1) + 0.6 * pi,
-                "RR_calf_joint": 0.5 * pi,
+                k: v for k, v in zip(robot.actuated_joint_names, np.zeros(len(robot.actuated_joint_names)))
             },
             key="robot",
         )
