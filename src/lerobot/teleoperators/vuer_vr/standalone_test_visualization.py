@@ -78,10 +78,24 @@ tip_indices = [4, 9, 14, 19, 24]
 head_height=  None
 
 # Simple UDP setup for sending joint/pose data
-UDP_HOST = "127.0.0.1"  # change if needed
+UDP_HOST = "10.33.12.254"  # change if needed
 UDP_PORT = 8888
 _udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
 _udp_sock.setblocking(False)
+
+# Increase send buffer size to handle bursts
+_udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65536)  # 64KB
+
+# Set socket priority (if supported)
+try:
+    _udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_PRIORITY, 6)  # High priority
+except:
+    pass  # Not all systems support this
+    
+# Enable broadcast (useful for some network setups)
+_udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
 
 def _send_udp(right_arm_angles, left_arm_angles, right_finger_angles, left_finger_angles):
     # finger was 0 to 65535 because of the glove format
@@ -106,6 +120,10 @@ def _send_udp(right_arm_angles, left_arm_angles, right_finger_angles, left_finge
     # [3]: Ring finger
     # [4]: Pinky
     # [5]: thumb extra joint
+    left_arm_angles =  np.zeros(5)
+    right_arm_angles = np.zeros(5)
+    print("Arms")
+    print(left_arm_angles, right_arm_angles)
     payload = {
         "timestamp": time.time(),
         "joints": {
@@ -120,16 +138,20 @@ def _send_udp(right_arm_angles, left_arm_angles, right_finger_angles, left_finge
             "24": right_arm_angles[3],
             "25": right_arm_angles[4]
         },
+        # thumb: -0.2, 1
+        # other fingers: -2.3, 1
         "fingers": [
-            int(np.clip(65535 * (right_finger_angles[0]+2.3) / 2.6, 0, 65535)),
-            int(np.clip(65535 * (right_finger_angles[1]+1.3) / 2.6, 0, 65535)),
-            int(np.clip(65535 * (right_finger_angles[2]+1.3) / 2.6, 0, 65535)),
-            int(np.clip(65535 * (right_finger_angles[3]+1.3) / 2.6, 0, 65535)),
-            int(np.clip(65535 * (right_finger_angles[4]+1.3) / 2.6, 0, 65535)),
-            int(np.clip(65535 * (right_finger_angles[5]+1.3) / 2.6, 0, 65535)),
+            int(np.clip(65535-65535 * (right_finger_angles[0]-0.2) / 1.4, 0, 65535)),
+            int(np.clip(65535-65535 * (right_finger_angles[1]+2.3) / 3.3, 0, 65535)),
+            int(np.clip(65535-65535 * (right_finger_angles[2]+2.3) / 3.3, 0, 65535)),
+            int(np.clip(65535-65535 * (right_finger_angles[3]+2.3) / 3.3, 0, 65535)),
+            int(np.clip(65535-65535 * (right_finger_angles[4]+2.3) / 3.3, 0, 65535)),
+            0,
         ]
     }
+    print("Fingers")
     print(right_finger_angles)
+    print(payload['fingers'])
     try:
         _udp_sock.sendto(json.dumps(payload).encode("utf-8"), (UDP_HOST, UDP_PORT))
     except Exception:
@@ -211,16 +233,25 @@ async def hand_move_handler(event, session):
             right_landmarks_shared[:] = right_mat_numpy
 
     right_tips = right_landmarks_shared[tip_indices]
-    rel_right_tips = right_tips @ fast_mat_inv(right_hand_shared)
+    rel_right_tips = right_tips @ right_hand_shared
     right_tip_x_angles = [
         Rotation.from_matrix(tip_mat[:3,:3]).as_euler('xyz', degrees=False)[0]
         for tip_mat in rel_right_tips
     ]
 
-    right_tip_x_angles.append(0.0)
+    right_tip_x_angles.append(float(right_tips[0][0,0]))
+
+    right_tip_x_angles = [
+        x + 0.2 for x in right_tip_x_angles
+    ]
+
+    right_tip_x_angles = [
+        x if x >= 0 else x+2*np.pi
+        for x in right_tip_x_angles
+    ]
 
     left_tips = left_landmarks_shared[tip_indices]
-    rel_left_tips = left_tips @ fast_mat_inv(left_hand_shared)
+    rel_left_tips = left_tips @ left_hand_shared
     left_tip_x_angles = [
         Rotation.from_matrix(tip_mat[:3,:3]).as_euler('xyz', degrees=False)[0]
         for tip_mat in rel_left_tips
