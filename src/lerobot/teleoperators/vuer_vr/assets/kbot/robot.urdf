@@ -21,6 +21,11 @@
     <child link="Torso_Side_Right"/>
     <origin xyz="0 -0.095 0" rpy="0 0 1.5708"/>
   </joint>
+  <joint name="base_joint_left" type="fixed">
+    <parent link="base"/>
+    <child link="Torso_Side_Left"/>
+    <origin xyz="0 -0.095 0" rpy="0 0 1.5708"/>
+  </joint>
   <joint name="dof_right_shoulder_pitch_03" type="revolute">
     <origin xyz="-0.028031 0.000007 0.126021" rpy="1.570796 0 1.570796"/>
     <parent link="Torso_Side_Right"/>
@@ -30,7 +35,7 @@
   </joint>
   <joint name="dof_left_shoulder_pitch_03" type="revolute">
     <origin xyz="0.213969 0.000007 0.126021" rpy="-1.570796 0 1.570796"/>
-    <parent link="Torso_Side_Right"/>
+    <parent link="Torso_Side_Left"/>
     <child link="KC_C_104L_PitchHardstopDriven"/>
     <limit effort="60" velocity="18.849" lower="-1.396263" upper="3.141593"/>
     <axis xyz="0 0 1"/>
@@ -92,20 +97,8 @@
     <axis xyz="0 0 -1"/>
   </joint>
   <link name="Torso_Side_Right">
-    <!-- <visual name="Torso_Side_Right_visual">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry name="Torso_Side_Right_geometry">
-        <mesh filename="meshes/Torso_Side_Right.stl"/>
-      </geometry>
-      <material name="Torso_Side_Right_material">
-        <color rgba="0.098039 0.098039 0.098039 1"/>
-      </material>
-    </visual> -->
-    <inertial name="Torso_Side_Right_inertial">
-      <mass value="13.504988"/>
-      <inertia ixx="0.485847" iyy="0.512347" izz="0.059200" ixy="0.000137" ixz="-0.000988" iyz="0.010329"/>
-      <origin xyz="0.093177 -0.000920 -0.063462" rpy="0 0 0"/>
-    </inertial>
+  </link>
+  <link name="Torso_Side_Left">
   </link>
   <link name="KC_C_104R_PitchHardstopDriven">
     <visual name="KC_C_104R_PitchHardstopDriven_visual">
