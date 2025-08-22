@@ -13,6 +13,9 @@ from scipy.spatial.transform import Rotation
 from scipy.optimize import least_squares
 from line_profiler import profile
 import ikpy.chain
+import socket
+import json
+import time
 
 def fast_mat_inv(mat):
     ret = np.eye(4)
@@ -74,21 +77,75 @@ tip_indices = [4, 9, 14, 19, 24]
 
 head_height=  None
 
+# Simple UDP setup for sending joint/pose data
+UDP_HOST = "127.0.0.1"  # change if needed
+UDP_PORT = 8888
+_udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+_udp_sock.setblocking(False)
+
+def _send_udp(right_arm_angles, left_arm_angles, right_finger_angles, left_finger_angles):
+    # finger was 0 to 65535 because of the glove format
+    # Joint Mapping:
+    # 11: Left shoulder pitch (inverted)
+    # 12: Left shoulder roll
+    # 13: Left shoulder yaw
+    # 14: Left elbow
+    # 15: Left wrist (inverted)
+    # 21: Right shoulder pitch (inverted)
+    # 22: Right shoulder roll
+    # 23: Right shoulder yaw
+    # 24: Right elbow
+    # 25: Right wrist (inverted)
+    # fingers
+    # Type: Array of 6 integers
+    # Range: 0-65535 (16-bit values)
+    # Index Mapping:
+    # [0]: Thumb
+    # [1]: Index finger
+    # [2]: Middle finger
+    # [3]: Ring finger
+    # [4]: Pinky
+    # [5]: thumb extra joint
+    payload = {
+        "timestamp": time.time(),
+        "joints": {
+            "11": -left_arm_angles[0],
+            "12": left_arm_angles[1],
+            "13": left_arm_angles[2],
+            "14": left_arm_angles[3],
+            "15": left_arm_angles[4],
+            "21": right_arm_angles[0],
+            "22": right_arm_angles[1],
+            "23": right_arm_angles[2],
+            "24": right_arm_angles[3],
+            "25": right_arm_angles[4]
+        },
+        "fingers": [
+            int(np.clip(65535 * (right_finger_angles[0]+2.3) / 2.6, 0, 65535)),
+            int(np.clip(65535 * (right_finger_angles[1]+1.3) / 2.6, 0, 65535)),
+            int(np.clip(65535 * (right_finger_angles[2]+1.3) / 2.6, 0, 65535)),
+            int(np.clip(65535 * (right_finger_angles[3]+1.3) / 2.6, 0, 65535)),
+            int(np.clip(65535 * (right_finger_angles[4]+1.3) / 2.6, 0, 65535)),
+            int(np.clip(65535 * (right_finger_angles[5]+1.3) / 2.6, 0, 65535)),
+        ]
+    }
+    print(right_finger_angles)
+    try:
+        _udp_sock.sendto(json.dumps(payload).encode("utf-8"), (UDP_HOST, UDP_PORT))
+    except Exception:
+        # Avoid blocking/logging in hot path
+        pass
+
 @profile
 def right_hand_inverse_kinematics(right_hand_tip_poses):
 
-    link_names = [
-        'R_thumb_tip','R_index_tip', 'R_middle_tip', 'R_ring_tip', 'R_pinky_tip' 
-    ]
+    link_names = ['R_thumb_tip','R_index_tip','R_middle_tip','R_ring_tip','R_pinky_tip']
     _joint_names = ['R_thumb_proximal_yaw_joint', 'R_index_proximal_joint', 'R_middle_proximal_joint', 'R_ring_proximal_joint', 'R_pinky_proximal_joint', 'R_thumb_proximal_pitch_joint']
 
     @profile
     def residuals(joint_angle_vector):
         '''corresponds to '''
-        cfg = {
-            k: a
-            for k, a in zip(right_hand_robot.actuated_joints, joint_angle_vector)
-        }
+        cfg = dict(zip(right_hand_robot.actuated_joints, joint_angle_vector, strict=True))
         hand_positions = right_hand_robot.link_fk(cfg, links = link_names)
         positions = np.array([hand_positions[right_hand_robot.link_map[name]][:3, 3] for name in link_names])
         err = positions - right_hand_tip_poses
@@ -162,6 +219,13 @@ async def hand_move_handler(event, session):
 
     right_tip_x_angles.append(0.0)
 
+    left_tips = left_landmarks_shared[tip_indices]
+    rel_left_tips = left_tips @ fast_mat_inv(left_hand_shared)
+    left_tip_x_angles = [
+        Rotation.from_matrix(tip_mat[:3,:3]).as_euler('xyz', degrees=False)[0]
+        for tip_mat in rel_left_tips
+    ]
+
     # right_tips_urdf_frame = rel_right_tips[:,:3] @ vuer_to_urdf_mat.T
 
     # # right_hand_joints = right_hand_inverse_kinematics(right_tips_urdf_frame)
@@ -210,7 +274,13 @@ async def hand_move_handler(event, session):
     # left_arm_joints = np.zeros(6)
     # right_arm_joints = np.zeros(6)
 
-    
+    # Send over UDP instead of printing
+    _send_udp(
+        right_arm_joints,
+        left_arm_joints,
+        right_tip_x_angles,
+        left_tip_x_angles
+    )
 
     joint_values = {}
     for i, link in enumerate(left_chain.links):
